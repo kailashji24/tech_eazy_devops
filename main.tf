@@ -1,3 +1,4 @@
+# Added by Kailash Chaudhary for Assignment 1 - PR demonstration
 provider "aws" {
   region = "ap-south-1" # Mumbai region
 }
