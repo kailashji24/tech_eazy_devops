@@ -1,6 +1,7 @@
-region        = "ap-south-1"
-stage         = "dev"
-instance_type = "t3.micro"
-key_name      = "devops-key"
-custom_name   = "Kailash Chaudhary"
-app_repo_url  = "https://github.com/Trainings-TechEazy/test-repo-for-devops.git"
+region         = "ap-south-1"
+stage          = "dev"
+instance_type  = "t3.micro"
+key_name       = "devops-key"
+custom_name    = "kailash"
+app_bucket     = "assignment2-app-bucket"   # IMPORTANT
+instance_count = 3

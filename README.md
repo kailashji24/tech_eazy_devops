@@ -1,36 +1,39 @@
 # 🚀 Assignment 2 – Automated Infrastructure Deployment Using Terraform
 
-This project is a **fully automated AWS infrastructure** built with Terraform.  
-It extends **Assignment 1** by introducing **scalability, automation, centralized logging**, and **real-world production practices**.
+This project demonstrates a fully automated AWS infrastructure using Terraform.  
+It provisions a scalable, production-like environment consisting of:
 
-Developed over multiple days, this setup demonstrates how Infrastructure as Code (IaC) can be used to build, configure, and scale applications seamlessly on AWS.
+- **Application Load Balancer (ALB)**
+- **EC2 instances (auto-configured)**
+- **Custom NGINX landing page**
+- **Spring Boot backend (JAR pulled from S3)**
+- **Centralized S3 log storage**
+- **IAM roles & cron-based automation**
 
----
+Everything is deployed using a single command:
+
+
+terraform apply -var-file="dev.tfvars" -auto-approve
+
 
 ## 🧩 Overview
 
-This deployment performs **complete infrastructure automation**:
-- Provisions **3 EC2 instances** automatically using Terraform `count`
-- Installs **Java, Maven, AWS CLI, and Nginx** via the `user_data.sh` script
-- Clones and builds a **Spring Boot application** from GitHub
-- Runs the backend on **port 8080**
-- Configures **Nginx** as a reverse proxy (port 80) and hosts a **custom landing page**
-- Creates an **Application Load Balancer (ALB)** for traffic distribution
-- Sets up **IAM roles and policies** for S3 log uploads
-- Adds a **cron job** to each EC2 instance to upload logs to **S3** every minute
+This deployment includes:
 
-Everything is handled by **one command**:  
-```bash
-terraform apply -var-file="dev.tfvars" -auto-approve
-```
+- 🚀 3 EC2 instances created using Terraform `count`
+- 📦 Spring Boot JAR downloaded from an **S3 app bucket**
+- 📡 ALB distributing traffic across all EC2 instances
+- 📝 Custom HTML landing page via NGINX
+- 🔁 Reverse proxy `/app/` → backend (8080)
+- 📤 Cron job uploading logs to S3 every minute
+- 🔐 IAM role granting secure S3 write access
+- ⚙️ Full automation via `user_data.sh`
 
-No manual steps or configuration needed after deployment.
 
----
 
 ## ⚙️ Architecture
 
-```text
+
                  +-----------------------------+
                  |      AWS Load Balancer      |
                  +--------------+--------------+
@@ -40,150 +43,146 @@ No manual steps or configuration needed after deployment.
       EC2 Instance 1      EC2 Instance 2      EC2 Instance 3
             |                   |                   |
      +------+-----+       +------+-----+       +------+-----+
-     |  Spring Boot |     |  Spring Boot |     |  Spring Boot |
-     |  (port 8080) |     |  (port 8080) |     |  (port 8080) |
+     | Spring Boot |      | Spring Boot |      | Spring Boot |
+     |  (8080)     |      |  (8080)     |      |  (8080)     |
      +------+-----+       +------+-----+       +------+-----+
             |                   |                   |
-         Nginx (80)         Nginx (80)         Nginx (80)
+         NGINX (80)         NGINX (80)         NGINX (80)
                                 |
                                 |
                  +-----------------------------+
                  |         S3 Log Bucket       |
                  +-----------------------------+
-```
 
----
+
+
 
 ## 🧱 Components
 
-| Resource | Purpose |
-|-----------|----------|
-| **ALB (Application Load Balancer)** | Distributes incoming traffic across EC2 instances |
-| **EC2 Instances (3)** | Host Spring Boot app and handle log uploads |
-| **S3 Bucket** | Stores application logs uploaded from EC2 |
-| **IAM Role & Policy** | Grants EC2 permission to write logs to S3 |
-| **Nginx** | Hosts landing page and proxies requests to backend |
-| **Cron Job** | Automates periodic log uploads to S3 |
-| **Terraform** | Manages complete infrastructure setup and teardown |
+| Component | Purpose |
+|----------|---------|
+| **ALB** | Load balances incoming traffic |
+| **3× EC2 Instances** | Host backend + NGINX |
+| **S3 Log Bucket** | Stores uploaded logs |
+| **S3 App Bucket** | Contains backend JAR |
+| **IAM Role & Policy** | Enables EC2 → S3 log upload |
+| **NGINX** | Frontend + reverse proxy |
+| **Cron Job** | Uploads logs every minute |
+| **Terraform** | IaC automation |
 
 ---
 
 ## 🧩 How It Works
 
-1. **Infrastructure Creation**
-   ```bash
-   terraform init -upgrade
-   terraform validate
-   terraform plan -var-file="dev.tfvars"
-   terraform apply -var-file="dev.tfvars" -auto-approve
-   ```
+### 1️⃣ Infrastructure Provisioning
 
-2. **Bootstrapping**
-   - The `user_data.sh` script runs automatically on instance creation.
-   - It installs dependencies and clones the app from GitHub.
-   - Builds the `.jar` using Maven.
-   - Starts the Spring Boot app on port 8080.
-   - Configures Nginx reverse proxy and custom HTML landing page.
-   - Creates a cron job to upload logs to S3 every minute.
 
-3. **Access**
-   - **Landing Page:** `http://<alb_dns_name>`
-   - **Backend App:** `http://<alb_dns_name>/app`
-   - **Logs:** Available in S3 bucket (`log_bucket_name`)
+terraform init -upgrade
+terraform validate
+terraform plan -var-file="dev.tfvars"
+terraform apply -var-file="dev.tfvars" -auto-approve
 
----
 
-## 🧾 Example Terraform Outputs
+### 2️⃣ EC2 Bootstrapping (`user_data.sh`)
 
-```
-alb_dns_name    = "dev-app-alb-53ec44-852222316.ap-south-1.elb.amazonaws.com"
-log_bucket_name = "dev-app-logs-53ec44"
-```
+Each EC2 instance performs:
 
-**Access the application:**
-👉 [http://dev-app-alb-53ec44-852222316.ap-south-1.elb.amazonaws.com](http://dev-app-alb-53ec44-852222316.ap-south-1.elb.amazonaws.com)
+- Installs **Java 17**, **AWS CLI**, **NGINX**
+- Downloads backend JAR from:
 
-**Check logs in S3:**
-👉 [https://s3.console.aws.amazon.com/s3/buckets/dev-app-logs-53ec44](https://s3.console.aws.amazon.com/s3/buckets/dev-app-logs-53ec44)
 
----
+s3://<APP_BUCKET>/builds/app.jar
+
+- Starts Spring Boot on **8080**
+- Configures NGINX:
+  - `/` → Custom HTML page  
+  - `/app/` → Reverse proxy to backend  
+
+- Creates cron job:
+
+
+* * * * * aws s3 cp /home/ubuntu/app.log s3://<LOG_BUCKET>/logs/$(hostname).log
+
+
+
+### 3️⃣ Access
+
+**Frontend:**
+
+http://<alb_dns_name>
+
+
+**Backend API:**
+
+http://<alb_dns_name>/app/hello
+
+
+**Logs in S3:**
+
+s3://<log_bucket_name>/logs/
+
+
+
+## 🧾 Example Outputs
+
+alb_dns_name    = "dev-app-alb-7607d7-35193649.ap-south-1.elb.amazonaws.com"
+log_bucket_name = "dev-app-logs-7607d7"
+
+
 
 ## 🔧 Variables (`dev.tfvars`)
 
-```hcl
 region         = "ap-south-1"
 stage          = "dev"
-instance_type  = "t2.micro"
+instance_type  = "t3.micro"
 key_name       = "devops-key"
-custom_name    = "Kailash Chaudhary"
-app_repo_url   = "https://github.com/Trainings-TechEazy/test-repo-for-devops.git"
-```
+custom_name    = "kailash"
+app_bucket     = "assignment2-app-bucket"
+instance_count = 3
 
----
 
-## 🧰 Files Included
+
+
+## 📂 Files Included
 
 | File | Description |
-|------|--------------|
-| `main.tf` | Core Terraform configuration |
-| `variables.tf` | Variable definitions |
-| `dev.tfvars` | Environment variable values |
-| `iam-policy.json` | IAM permissions for S3 access |
-| `user_data.sh` | Startup automation script |
-| `terraform.tfstate` | Terraform state file |
-| `terraform.tfstate.backup` | Backup state |
-| `.terraform.lock.hcl` | Provider lock file |
-| `README.md` | Documentation (this file) |
+|------|-------------|
+| `main.tf` | Core infrastructure |
+| `variables.tf` | Input variables |
+| `dev.tfvars` | Environment configuration |
+| `user_data.sh` | EC2 boot automation |
+| `iam-policy.json` | S3 access policy |
+| `.gitignore` | Prevents committing state files |
+| `README.md` | Documentation |
 
----
 
 ## 📊 Key Highlights
 
-| Feature | Description |
-|----------|--------------|
-| **Full Automation** | One-step provisioning using Terraform |
-| **Scalability** | 3-instance architecture with ALB |
-| **Centralized Logging** | S3-based log uploads from EC2 |
-| **IAM Security** | Fine-grained S3 write permissions |
-| **Zero Manual Steps** | Fully automated from infra to app |
-| **Custom Web UI** | Personalized HTML landing page |
+- ✔ JAR downloaded from S3, not GitHub  
+- ✔ Complete automation end-to-end  
+- ✔ Scalable EC2 cluster behind ALB  
+- ✔ Centralized logging in S3  
+- ✔ Custom web UI  
+- ✔ Clean IaC architecture  
 
----
 
-## 🧠 Key Learnings
-
-- **Infrastructure as Code (IaC)** using Terraform  
-- Multi-tier AWS architecture with **ALB + EC2 + S3**  
-- Secure access control via **IAM roles & policies**  
-- Automated **application provisioning and deployment**  
-- **Log management** with cron and S3 integration  
-- Real-world **scaling and maintainability practices**
-
----
 
 ## 🧹 Destroy Infrastructure
 
-When finished, clean up all resources:
-```bash
 terraform destroy -var-file="dev.tfvars" -auto-approve
-```
-✅ This prevents extra AWS billing and keeps the environment tidy.
 
----
 
 ## 👨‍💻 Author
 
 **Kailash Chaudhary**  
 B.E. – Computer Science & Engineering  
 Pravara Rural Engineering College, Loni  
-*(Affiliated to Savitribai Phule Pune University)*  
+(Affiliated to Savitribai Phule Pune University)  
 📍 Pune City, India  
-🔗 [LinkedIn Profile](https://www.linkedin.com/in/kailash-chaudhary24)
+🔗 LinkedIn: https://www.linkedin.com/in/kailash-chaudhary24
 
----
+
 
 ## 🏁 Summary
 
-> This project demonstrates **end-to-end AWS automation** using Terraform.  
-> From provisioning to configuration to logging, every step runs autonomously.  
-> It showcases how DevOps principles can achieve repeatable, scalable, and reliable cloud environments with zero manual intervention.
+This project demonstrates a complete AWS automation pipeline using Terraform—covering compute, networking, reverse proxying, logging, and automation, reflecting real-world DevOps workflows.

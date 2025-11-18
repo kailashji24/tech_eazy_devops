@@ -1,80 +1,72 @@
 #!/bin/bash
 set -e
 
-# Terraform injects this automatically
-LOG_BUCKET="${log_bucket_name}"
-
 sudo apt-get update -y
-sudo apt-get install -y openjdk-17-jdk git maven awscli nginx
+sudo apt-get install -y openjdk-17-jdk awscli nginx
 
-# ------- Clone & Build App -------
-cd /home/ubuntu
-if [ ! -d "/home/ubuntu/app" ]; then
-  git clone https://github.com/Trainings-TechEazy/test-repo-for-devops.git app
-fi
-cd /home/ubuntu/app
-mvn clean package -DskipTests
-JAR_FILE=$(find target -name "*.jar" | head -n 1)
+mkdir -p /home/ubuntu/app
+chown ubuntu:ubuntu /home/ubuntu/app
 
-# ------- Run Spring Boot Backend (on 8080) -------
-nohup java -jar "$JAR_FILE" --server.port=8080 > /home/ubuntu/app.log 2>&1 &
+# Download JAR from S3 (Uses APP_BUCKET for the permanent artifact)
+aws s3 cp "s3://${APP_BUCKET}/builds/app.jar" /home/ubuntu/app/app.jar
 
-# ------- Custom Landing Page (Port 80) -------
-sudo bash -c 'cat > /var/www/html/index.html <<EOF
-<!doctype html>
+# ----------------------------------------------------
+# 🛠️ FIX FOR CUSTOM WEB PAGE
+# ----------------------------------------------------
+
+# 1. Create a directory for the custom page and set ownership
+sudo mkdir -p /var/www/html/custom
+sudo chown -R ubuntu:ubuntu /var/www/html
+
+# 2. Create the Custom HTML Page (Your name/details)
+sudo bash -c "cat > /var/www/html/custom/index.html <<'HTML_EOF'
+<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8"/>
-  <title>Kailash Chaudhary</title>
-  <style>
-    body {font-family: Arial, sans-serif; background:#f9f9f9; margin:40px;}
-    .card {background:white; padding:30px; border-radius:12px;
-           box-shadow:0 0 12px rgba(0,0,0,0.1);}
-    h1 {color:#2b7de9;}
-  </style>
+    <title>Kailash Chaudhary - DevOps Assignment</title>
+    <style>body { font-family: Arial, sans-serif; background-color: #f4f4f4; text-align: center; padding-top: 50px; } h1 { color: #333; } p { color: #666; }</style>
 </head>
 <body>
-  <div class="card">
-    <h1>🚀 Kailash Chaudhary’s App</h1>
-    <p>This is served through Nginx (80) → Spring Boot (8080)</p>
-    <p>Visit <a href="/app">/app</a> to open the backend app.</p>
-  </div>
+    <h1>Welcome, this is the Web Server of Kailash Chaudhary!</h1>
+    <p>Infrastructure deployed using Terraform and running on AWS EC2.</p>
+    <hr>
+    <p>Backend Status: <a href='/app/hello'>/app/hello</a></p>
+    <p>Application Logs are being pushed to S3 bucket: ${LOG_BUCKET}</p>
 </body>
 </html>
-EOF'
+HTML_EOF"
 
-# ------- Nginx Reverse Proxy -------
-sudo bash -c 'cat > /etc/nginx/sites-available/default <<NGINX
+# 3. Configure NGINX to serve the custom page at / and proxy the app at /app/
+sudo bash -c "cat > /etc/nginx/sites-available/default <<'EOF'
 server {
-  listen 80 default_server;
-  listen [::]:80 default_server;
-  server_name _;
-  root /var/www/html;
-  index index.html;
+    listen 80;
+    
+    # Root location serves the static custom page
+    location / {
+        root /var/www/html/custom;
+        index index.html;
+    }
 
-  location / {
-    try_files \$uri \$uri/ =404;
-  }
-
-  location /app/ {
-    proxy_pass http://127.0.0.1:8080/;
-    proxy_set_header Host \$host;
-  }
+    # New location to proxy application traffic (e.g., /app/)
+    location /app/ {
+        # The trailing slash here is CRITICAL for correct proxying
+        proxy_pass http://127.0.0.1:8080/; 
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+    }
 }
-NGINX'
+EOF"
 
 sudo systemctl restart nginx
-sudo systemctl enable nginx
 
-# ------- Create Cron Job for Log Upload (Guaranteed) -------
-sudo tee /etc/cron.d/app-log-upload > /dev/null <<EOF
-SHELL=/bin/bash
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-AWS_DEFAULT_REGION=ap-south-1
+# ----------------------------------------------------
+# END FIX
+# ----------------------------------------------------
 
-* * * * * root [ -f /home/ubuntu/app.log ] && /usr/bin/aws s3 cp /home/ubuntu/app.log "s3://$${LOG_BUCKET}/\$(hostname)-app.log" --quiet
-EOF
+# Run app 
+sudo -u ubuntu bash -c "nohup java -jar /home/ubuntu/app/app.jar --server.port=8080 > /home/ubuntu/app.log 2>&1 &"
 
-sudo chmod 644 /etc/cron.d/app-log-upload
-sudo systemctl restart cron
-echo "✅ Cron job created for log uploads to $${LOG_BUCKET}"
+# Log upload every 1 min (Uses LOG_BUCKET for the temporary logs)
+sudo bash -c "cat >/etc/cron.d/app-log-upload <<EOF
+* * * * * root aws s3 cp /home/ubuntu/app.log s3://${LOG_BUCKET}/logs/\$(hostname)-app.log --region ap-south-1 --quiet
+EOF"
